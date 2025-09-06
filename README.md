@@ -60,7 +60,7 @@ Example config (JSON):
   "target_type": "cat",
   "other_types": ["dog", "bird"],
   "speed": { "start_px_per_sec": 400, "accel_px_per_min": 250, "max_px_per_sec": 1200 },
-  "hit_window_ms": { "good": 120, "perfect": 60 },
+  "hit_window_ms": { "good": 120 },
   "scoring": { "base": 1 },
   "assets_root": "assets",
   "supported_formats": ["png", "jpg"],

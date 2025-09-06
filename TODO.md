@@ -35,22 +35,15 @@ This checklist enumerates every step to implement the game exactly per `README.m
 
 - [ ] Implement `validate_config(cfg: GameConfig) -> None`
   - Ensure `cfg.mode == "endless"`.
-  - Ensure `cfg.lanes == 4` (as per current rules) or >=1 if allowing future-proofing.
+  - Ensure `cfg.lanes == 4` (exactly four lanes per current spec).
   - Ensure `cfg.target_type` not empty.
   - Ensure all entries in `cfg.supported_formats` are exactly in {"png","jpg"}.
   - Ensure `cfg.controls.keys` length equals `cfg.lanes` and keys are unique.
   - Ensure `cfg.speed.max_px_per_sec >= cfg.speed.start_px_per_sec` and all > 0.
 
-### 3) Synthetic asset generation (`src/assets.py`)
+### 3) Assets: no synthetic generation
 
-- [ ] Implement `ensure_synthetic_assets(assets_root: str) -> None`
-  - Create `assets_root/synth_a` and `assets_root/synth_b` if missing.
-  - Ensure each has exactly 4 images named `img_1.png` … `img_4.png`.
-  - Use Pillow only.
-
-- [ ] Implement helper `create_labeled_image(path: str, size: tuple[int,int], background_rgb: tuple[int,int,int], text: str) -> None`
-  - Create 256×256 PNG with solid background and centered text label.
-  - Use Pillow `Image`, `ImageDraw`, `ImageFont` (default font if none available).
+- [ ] N/A — synthetic asset generation removed. Use existing folders under `assets/`.
 
 ### 4) AssetManager — discovery and preload (`src/assets.py`)
 
@@ -58,7 +51,12 @@ This checklist enumerates every step to implement the game exactly per `README.m
   - List immediate entries in `assets_root`; keep only directories; return their names as `type_name`s.
 
 - [ ] Implement `validate_assets_root(assets_root: str) -> None`
-  - Ensure every entry in `assets_root` is a directory. Error if files or unexpected entries exist.
+  - Ignore non-directory entries (e.g., `.DS_Store`).
+  - This function validates basic accessibility and existence of the root.
+
+- [ ] Implement `validate_expected_type_dirs(assets_root: str, expected_types: set[str]) -> None`
+  - Ensure all `expected_types` directories exist under `assets_root`.
+  - Error if any extra directories are present that are not in `expected_types`.
 
 - [ ] Implement `list_images_for_type(type_dir: str, supported_formats: list[str]) -> list[str]`
   - Return file paths with extensions matching supported formats (case-insensitive).
@@ -69,8 +67,8 @@ This checklist enumerates every step to implement the game exactly per `README.m
 - [ ] Implement class `AssetManager`
   - `__init__(self, assets_root: str, supported_formats: list[str], tile_size: tuple[int,int])`
   - `type_to_surfaces: dict[str, list[pygame.Surface]]`
-  - `preload(self) -> None`
-    - Calls `validate_assets_root`, `discover_types`, then loads/scales images per type.
+  - `preload(self, types: list[str]) -> None`
+    - Load and scale images for provided `types`.
   - `get_random_image(self, type_name: str) -> pygame.Surface`
     - Random uniform selection among preloaded surfaces for `type_name`.
   - `get_thumbnail(self, type_name: str, thumb_size: tuple[int,int]) -> pygame.Surface`
@@ -82,6 +80,7 @@ This checklist enumerates every step to implement the game exactly per `README.m
   - `BASE_WIDTH = 480`, `BASE_HEIGHT = 800`
   - `HIT_LINE_FRACTION = 0.88`
   - `ROWS_VISIBLE = 4` (guidance for tile height)
+  - `MISS_TOLERANCE_PX = 0` (treat a miss when the tile crosses the hit line)
   - Colors: `COLOR_BG`, `COLOR_HIT_LINE`, `COLOR_HUD_TEXT`, etc.
 
 - [ ] Implement geometry helpers in `game.py`
@@ -119,14 +118,18 @@ This checklist enumerates every step to implement the game exactly per `README.m
 ### 9) Input mapping (`src/game.py`)
 
 - [ ] Implement `key_to_lane(key: int, keys: list[str]) -> int | None`
-  - Map pygame key to lane index by matching against configured `keys` (H, J, K, L).
+  - Map pygame event key to lane index by matching against configured `keys` (H, J, K, L), case-insensitive.
+  - Consider precomputing `normalized_keys: list[int]` with pygame constants.
+
+- [ ] Implement `normalize_keys_to_pygame(keys: list[str]) -> list[int]`
+  - Map strings like "H" to `pygame.K_h`, etc.
 
 ### 10) Game logic (`src/game.py`)
 
 - [ ] Implement class `Game`
   - `__init__(self, screen: pygame.Surface, cfg: GameConfig, asset_manager: AssetManager)`
     - Compute geometry; cache `lane_rects`, `hit_line_y`, `tile_size`.
-    - Initialize state: `score=0`, `elapsed_time=0.0`, `current_speed=cfg.speed.start_px_per_sec`, `tiles=[]`, `running=True`, `game_over=False`.
+    - Initialize state: `score=0`, `elapsed_time=0.0`, `current_speed=cfg.speed.start_px_per_sec`, `tiles=[]`, `running=True`, `game_over=False`, `last_fail_reason=None`, `last_missed_type=None`.
     - Pre-generate first rows.
   - `reset(self) -> None`
     - Reset score, time, speed, tiles, and flags.
@@ -141,11 +144,11 @@ This checklist enumerates every step to implement the game exactly per `README.m
   - `handle_keydown(self, lane_index: int) -> None`
     - Find nearest tile in lane around hit line using `find_hittable_tile`.
     - If found and `tile.type_name == cfg.target_type`: mark `hit`, `score += 1` and remove/hide tile.
-    - Else: `game_over = True`.
+    - Else: set `last_fail_reason = "wrong_tap"`, `last_missed_type = tile.type_name if tile else None`, then `game_over = True`.
   - `find_hittable_tile(self, lane_index: int, hit_window_px: float) -> Tile | None`
     - Choose the tile in `active` state closest to `hit_line_y` within `hit_window_px`.
   - `check_misses(self) -> None`
-    - If any `active` target tile `y` passes below `hit_line_y + tolerance` without being hit → `game_over = True`.
+    - If any `active` target tile bottom crosses `hit_line_y + MISS_TOLERANCE_PX` without being hit → set `last_fail_reason = "missed_target"`, `last_missed_type = cfg.target_type`, then `game_over = True`.
   - `render(self) -> None`
     - Draw background, lanes, tiles, hit line, and call `render_hud`.
 
@@ -155,7 +158,7 @@ This checklist enumerates every step to implement the game exactly per `README.m
   - Blit `tile.image` at `(tile.x, int(tile.y))` for `state == "active"`.
 
 - [ ] Implement `render_hud(screen: pygame.Surface, font: pygame.font.Font, target_thumb: pygame.Surface, score: int, elapsed_time: float, timer_full_scale_sec: float, window_width: int) -> None`
-  - Draw small target thumbnail/icon, score text, and a timer/progress bar based on `elapsed_time` and `timer_full_scale_sec` (e.g., 60s to fill the bar).
+  - Draw small target thumbnail/icon, score text, and a timer/progress bar based on `elapsed_time` and `timer_full_scale_sec` (purely visual; fills over the configured scale).
 
 ### 12) Main loop and bootstrap (`src/main.py`)
 
@@ -163,7 +166,7 @@ This checklist enumerates every step to implement the game exactly per `README.m
 
 - [ ] Implement `run() -> None`
   - Load config: `cfg = load_config("config.json"); validate_config(cfg)`.
-  - Ensure synthetic assets: `ensure_synthetic_assets(cfg.assets_root)`.
+  - Validate assets against config: `validate_expected_type_dirs(cfg.assets_root, {cfg.target_type, *cfg.other_types})`.
   - Compute `tile_size` using base window size and `ROWS_VISIBLE`.
   - Create `AssetManager(cfg.assets_root, cfg.supported_formats, tile_size)` and `preload()`.
   - Create window and `Game` instance.
@@ -176,8 +179,8 @@ This checklist enumerates every step to implement the game exactly per `README.m
 
 ### 13) Game over overlay (`src/game.py` or `src/main.py`)
 
-- [ ] Implement `render_game_over(screen: pygame.Surface, font: pygame.font.Font, score: int, window_size: tuple[int,int]) -> None`
-  - Semi-transparent overlay, centered text: "Game Over" and `Score: N`.
+- [ ] Implement `render_game_over(screen: pygame.Surface, font: pygame.font.Font, score: int, window_size: tuple[int,int], fail_reason: str | None, missed_type: str | None) -> None`
+  - Semi-transparent overlay, centered text: "Game Over", `Score: N`, and an optional line for the reason (e.g., `Missed: <type>` or `Wrong tap`).
 
 - [ ] Implement `wait_for_restart_or_quit() -> str`
   - Block until user presses `R` to restart or `ESC/Q` to quit; return action.
@@ -187,6 +190,7 @@ This checklist enumerates every step to implement the game exactly per `README.m
 - [ ] In `main.run`, validate that `cfg.target_type` exists under `assets_root`.
 - [ ] Validate that each `type_name` directory contains at least 1 image.
 - [ ] If `other_types` contains names not present in assets, log error and ignore or exit (decide policy; recommended: exit with message).
+ - [ ] Error if extra type directories exist in `assets_root` that are not `{cfg.target_type} ∪ set(cfg.other_types)`.
 
 ### 15) Performance considerations
 
@@ -201,7 +205,7 @@ This checklist enumerates every step to implement the game exactly per `README.m
 
 ### 17) Minimal tests/manual checks
 
-- [ ] Launch with only synthetic assets (`synth_a` target, `synth_b` others); verify rows contain exactly one target tile.
+- [ ] Launch with existing asset folders (e.g., `aiko` target; `pikachu`, `sesame` others); verify rows contain exactly one target tile.
 - [ ] Verify H/J/K/L hit detection works and increments score only on target hits.
 - [ ] Verify missing a target or hitting a non-target ends the game.
 - [ ] Verify speed ramps and caps at `max_px_per_sec`.

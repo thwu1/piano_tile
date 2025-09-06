@@ -9,6 +9,17 @@ Endless-mode Piano Tiles variant where tiles are images from named types under `
 - Python 3.10+
 - `pygame` for rendering, input, timing
 
+### Environment (conda)
+
+- Use a dedicated conda environment named `piano_tile`.
+- Setup commands:
+
+```bash
+conda create -y -n piano_tile python=3.12
+conda run -n piano_tile python -m pip install --upgrade pip
+conda run -n piano_tile python -m pip install pygame pillow
+```
+
 ### Directory structure
 
 - `assets/<type_name>/*` image files (PNG/JPG)
@@ -27,8 +38,8 @@ Endless-mode Piano Tiles variant where tiles are images from named types under `
 
 - `lanes: 4`
 - `mode: "endless"`
-- `target_type: "synth_a"` (default)
-- `other_types: ["synth_b"]` (default)
+- `target_type: "<type_name>"`
+- `other_types: ["<other_type>", ...]`
 - `speed: { start_px_per_sec, accel_px_per_min, max_px_per_sec }`
 - `hit_window_ms: { good }` — only the “good” window is used; any `perfect` value is ignored if present
 - `assets_root: "assets"`
@@ -41,8 +52,8 @@ Example:
 {
   "lanes": 4,
   "mode": "endless",
-  "target_type": "synth_a",
-  "other_types": ["synth_b"],
+  "target_type": "aiko",
+  "other_types": ["pikachu", "sesame"],
   "speed": { "start_px_per_sec": 400, "accel_px_per_min": 250, "max_px_per_sec": 1200 },
   "hit_window_ms": { "good": 120 },
   "assets_root": "assets",
@@ -101,23 +112,7 @@ Example:
 
 - Use `hit_window_ms.good`. Convert to pixels with current speed for proximity checks, or compare times by extrapolating crossing time to the hit line.
 
-### Synthetic asset generation
-
-- Requirement: create two synthetic types with four images each:
-  - `assets/synth_a/img_1.png` … `img_4.png`
-  - `assets/synth_b/img_1.png` … `img_4.png`
-
-- Image spec
-  - 256×256 PNG, solid background color per type, centered label text (e.g., `SYNTH_A_1`).
-
-- Implementation sketch (generator)
-  - Use `Pillow` to create images.
-
-```python
-def ensure_synthetic_assets(assets_root: str) -> None:
-  # create assets/synth_a and assets/synth_b with 4 labeled PNGs each, if missing
-  pass
-```
+ 
 
 ### Performance considerations
 
@@ -127,13 +122,13 @@ def ensure_synthetic_assets(assets_root: str) -> None:
 ### Edge cases
 
 - `other_types` may be empty; rows still spawn exactly one `target_type` tile.
-- Missing or empty asset folders: fail clearly; if synthetic defaults are selected, auto-generate them.
+- Missing or empty asset folders: fail clearly.
 - Mixed image sizes/aspect ratios: maintain aspect with center-crop or letterbox.
 
 ### Milestones
 
 1. Project scaffolding, config loader, constants.
-2. AssetManager with preload/scale and synthetic asset generator.
+2. AssetManager with preload/scale.
 3. Lane geometry and background rendering test.
 4. Tile model, simple row spawn, vertical scrolling.
 5. Hit line, hit detection, base scoring.
