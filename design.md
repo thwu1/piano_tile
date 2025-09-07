@@ -2,7 +2,7 @@
 
 ### Overview
 
-Endless-mode Piano Tiles variant where tiles are images from named types under `assets/{type_name}` (PNG/JPG only). One fixed `target_type` is configured; each row spawns exactly one target tile and fills remaining lanes with other types. Player taps only target tiles; tapping any other type or missing a target ends the run. Scoring is base-only (+1 per correct tap). Four lanes are mapped to `H J K L`.
+Endless-mode Piano Tiles variant where tiles are images from named types under `assets/{type_name}` (PNG/JPG only). One fixed `target_type` is configured; each row spawns exactly one target tile and fills remaining lanes with other types. Player taps only target tiles; tapping any other type or missing a target ends the run. Scoring is base-only (+1 per correct tap). Four lanes are mapped left→right via configurable `controls.keys`.
 
 ### Tech stack
 
@@ -44,7 +44,7 @@ conda run -n piano_tile python -m pip install pygame pillow
 - `hit_window_ms: { good }` — only the “good” window is used; any `perfect` value is ignored if present
 - `assets_root: "assets"`
 - `supported_formats: ["png", "jpg"]`
-- `controls: { keys: ["H","J","K","L"] }`
+- `controls: { keys: ["<k0>","<k1>","<k2>","<k3>"] }` — pygame key names, order defines lanes left→right; must be unique and length must equal `lanes`.
 
 Example:
 
@@ -58,7 +58,7 @@ Example:
   "hit_window_ms": { "good": 120 },
   "assets_root": "assets",
   "supported_formats": ["png", "jpg"],
-  "controls": { "keys": ["H", "J", "K", "L"] }
+  "controls": { "keys": ["a", "s", "d", "f"] }
 }
 ```
 
@@ -87,7 +87,7 @@ Example:
     - Miss detection: if a target tile crosses the hit line without being hit → game over.
     - Spawn new rows when top spacing threshold is met.
 
-- Input handling (H/J/K/L)
+- Input handling (configurable keys)
   - Map key to lane index (0..3).
   - On keydown, find the nearest tile in that lane within the vertical hit window around the hit line.
   - If tile exists and `type_name == target_type`: mark `hit`, score += 1; otherwise: game over.

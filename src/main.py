@@ -15,13 +15,23 @@ from .hud import render_hud
 
 
 def normalize_keys_to_pygame(keys):
-    mapping = {
-        "h": pygame.K_h,
-        "j": pygame.K_j,
-        "k": pygame.K_k,
-        "l": pygame.K_l,
-    }
-    return [mapping[k.lower()] for k in keys]
+    # Accept any pygame key name (e.g., "a", "space", "left").
+    # Returns a list of pygame key codes; raises ValueError on invalid names or duplicates.
+    result: list[int] = []
+    for raw in keys:
+        if isinstance(raw, str):
+            name = raw.strip().lower()
+            try:
+                code = pygame.key.key_code(name)
+            except Exception as exc:
+                raise ValueError(f"Invalid key name in controls.keys: {raw}") from exc
+            result.append(code)
+        else:
+            raise ValueError("controls.keys items must be strings representing pygame key names")
+
+    if len(set(result)) != len(result):
+        raise ValueError("controls.keys must map to unique keys")
+    return result
 
 
 def key_to_lane(key: int, keys: list[int]) -> int | None:

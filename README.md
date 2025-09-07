@@ -33,7 +33,9 @@ This variant of Piano Tiles replaces black/white tiles with images from configur
 ### Input and controls
 
 - **Touch/mouse**: Tap/click a tile when it reaches the hit line.
-- **Keyboard**: Four lanes mapped to `H J K L` (left→right).
+- **Keyboard**: Four lanes mapped left→right using `controls.keys` from `config.json` (configurable).
+- **Examples**: `["a","s","d","f"]`, `["left","down","up","right"]`, `["1","2","3","4"]`.
+- **Requirements**: exactly 4 entries (matches `lanes`), each a valid pygame key name (case-insensitive), all unique.
 - **Hit detection**: A tap within the lane and within the vertical hit window counts as a hit if the tile type is currently targeted.
 
 ### UI and feedback
@@ -49,7 +51,7 @@ This variant of Piano Tiles replaces black/white tiles with images from configur
 ### Configuration
 
 - **Directory layout**: `assets/<type_name>/*` image files per type.
-- **Runtime config**: lanes, base speed, acceleration, max speed, hit windows, base scoring only, `target_type` (fixed), keyboard mapping `H J K L`.
+- **Runtime config**: lanes, base speed, acceleration, max speed, hit windows, base scoring only, `target_type` (fixed), keyboard mapping via `controls.keys`.
 
 Example config (JSON):
 
@@ -67,6 +69,8 @@ Example config (JSON):
   "controls": { "keys": ["H", "J", "K", "L"] }
 }
 ```
+
+`controls.keys` accepts any pygame key names (e.g., letters, digits, `"space"`, arrows like `"left"`). Order defines lanes from left to right.
 
 ### Difficulty ramp
 
