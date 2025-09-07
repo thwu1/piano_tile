@@ -1,10 +1,10 @@
 {
   "lanes": 4,
   "mode": "classic",
-  "target_type": "aiko",
-  "other_types": ["sesame", "pikachu"],
+  "target_type": "pikachu",
+  "other_types": ["sesame", "aiko"],
   "classic": { "rows_total": 25, "advance_animation_ms": 160 },
-  "speed": { "start_px_per_sec": 80, "accel_px_per_min": 250, "max_px_per_sec": 1200 },
+  "speed": { "start_px_per_sec": 160, "accel_px_per_min": 250, "max_px_per_sec": 400},
   "hit_window_ms": { "good": 120 },
   "assets_root": "assets",
   "supported_formats": ["png", "jpg"],
