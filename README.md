@@ -17,6 +17,7 @@ This variant of Piano Tiles replaces black/white tiles with images from configur
 - **Lanes**: 4 lanes.
 - **Scrolling**: Tiles spawn at the top and scroll downward. Each row can contain one or more tiles.
 - **Target type (Endless mode)**: A fixed `target_type` is configured at start. Tap only tiles of this type; tapping any other type or missing the `target_type` ends the run.
+- **Classic mode**: Fixed-length run measured by time. The board advances one row only after a correct hit; a wrong hit ends the run immediately. Objective: finish all rows as fast as possible.
 - **Failure conditions**:
   - A target tile passes the hit line without being tapped.
   - You tap a non-target tile.
@@ -51,7 +52,10 @@ This variant of Piano Tiles replaces black/white tiles with images from configur
 ### Configuration
 
 - **Directory layout**: `assets/<type_name>/*` image files per type.
-- **Runtime config**: lanes, base speed, acceleration, max speed, hit windows, base scoring only, `target_type` (fixed), keyboard mapping via `controls.keys`.
+- **Runtime config**:
+  - Common: lanes, hit window, `target_type`, `other_types`, keyboard mapping via `controls.keys`, assets and formats.
+  - Endless: base speed, acceleration, max speed (ignored in classic).
+  - Classic: `classic.rows_total` (required), `classic.advance_animation_ms` (optional, default 160).
 
 Example config (JSON):
 
@@ -70,6 +74,22 @@ Example config (JSON):
 }
 ```
 
+Classic mode config example:
+
+```json
+{
+  "lanes": 4,
+  "mode": "classic",
+  "target_type": "cat",
+  "other_types": ["dog", "bird"],
+  "classic": { "rows_total": 60, "advance_animation_ms": 160 },
+  "hit_window_ms": { "good": 120 },
+  "assets_root": "assets",
+  "supported_formats": ["png", "jpg"],
+  "controls": { "keys": ["a", "s", "d", "f"] }
+}
+```
+
 `controls.keys` accepts any pygame key names (e.g., letters, digits, `"space"`, arrows like `"left"`). Order defines lanes from left to right.
 
 ### Difficulty ramp
@@ -84,6 +104,7 @@ Example config (JSON):
 
 ### End-of-run
 
-- **Game over screen**: Show final score and indicate which type (if any) was missed.
+- **Endless**: Game over screen shows final score and indicates which type (if any) was missed.
+- **Classic**: Completion screen shows final time (mm:ss.ms). Wrong tap shows game over with elapsed time.
 
 

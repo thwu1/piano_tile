@@ -9,9 +9,9 @@ import pygame
 from .config import load_config, validate_config
 from .constants import BASE_WIDTH, BASE_HEIGHT, ROWS_VISIBLE
 from .assets import AssetManager, validate_expected_type_dirs
-from .game import Game, calculate_lane_rects, get_hit_line_y, get_tile_size
+from .game import Game, ClassicGame, calculate_lane_rects, get_hit_line_y, get_tile_size
 from .generator import generate_row
-from .hud import render_hud
+from .hud import render_hud, render_hud_classic
 
 
 def normalize_keys_to_pygame(keys):
@@ -65,16 +65,19 @@ def run() -> None:
     # Preload only configured types
     asset_manager.preload([cfg.target_type, *cfg.other_types])
 
-    game = Game(screen, cfg)
-    # Seed initial rows
     rng = random.Random()
-    start_y = -tile_h
-    spacing = tile_h
-    for i in range(ROWS_VISIBLE + 1):
-        row_y = start_y - i * spacing
-        game.tiles.extend(
-            generate_row(cfg.target_type, cfg.other_types, cfg.lanes, lane_rects, asset_manager, tile_h, rng, row_y)
-        )
+    if cfg.mode == "endless":
+        game = Game(screen, cfg)
+        # Seed initial rows
+        start_y = -tile_h
+        spacing = tile_h
+        for i in range(ROWS_VISIBLE + 1):
+            row_y = start_y - i * spacing
+            game.tiles.extend(
+                generate_row(cfg.target_type, cfg.other_types, cfg.lanes, lane_rects, asset_manager, tile_h, rng, row_y)
+            )
+    else:
+        game = ClassicGame(screen, cfg, asset_manager)
 
     font = pygame.font.SysFont(None, 24)
     target_thumb = asset_manager.get_thumbnail(cfg.target_type, (40, 40))
@@ -91,9 +94,9 @@ def run() -> None:
             elif event.type == pygame.KEYDOWN:
                 print(f"DEBUG: keydown key={event.key}")
                 lane_idx = key_to_lane(event.key, keys_norm)
-                if lane_idx is not None and not game.game_over:
+                if lane_idx is not None and not getattr(game, "game_over", False) and not getattr(game, "finished", False):
                     game.handle_keydown(lane_idx)
-                elif event.key == pygame.K_r and game.game_over:
+                elif event.key == pygame.K_r and (getattr(game, "game_over", False) or getattr(game, "finished", False)):
                     # Simple restart: re-run main
                     run()
                     return
@@ -102,48 +105,73 @@ def run() -> None:
 
         if not game.game_over:
             game.update(dt)
-            # Spawn new rows based on the topmost tile position
-            active_tiles = [t for t in game.tiles if t.state == "active"]
-            if active_tiles:
-                top_y = min(t.y for t in active_tiles)
-            else:
-                top_y = 1e9
-            if top_y >= 0:
-                game.tiles.extend(
-                    generate_row(
-                        cfg.target_type,
-                        cfg.other_types,
-                        cfg.lanes,
-                        lane_rects,
-                        asset_manager,
-                        tile_h,
-                        rng,
-                        -tile_h,
+            if cfg.mode == "endless":
+                # Spawn new rows based on the topmost tile position
+                active_tiles = [t for t in game.tiles if t.state == "active"]
+                if active_tiles:
+                    top_y = min(t.y for t in active_tiles)
+                else:
+                    top_y = 1e9
+                if top_y >= 0:
+                    game.tiles.extend(
+                        generate_row(
+                            cfg.target_type,
+                            cfg.other_types,
+                            cfg.lanes,
+                            lane_rects,
+                            asset_manager,
+                            tile_h,
+                            rng,
+                            -tile_h,
+                        )
                     )
-                )
 
         game.render()
 
         # HUD
-        render_hud(screen, font, target_thumb, game.score, game.elapsed_time, timer_full_scale_sec, BASE_WIDTH)
+        if cfg.mode == "endless":
+            render_hud(screen, font, target_thumb, game.score, game.elapsed_time, timer_full_scale_sec, BASE_WIDTH)
+        else:
+            # Classic mode HUD
+            render_hud_classic(screen, font, target_thumb, getattr(game, "cleared_rows", 0), getattr(game, "rows_total", 0), getattr(game, "elapsed_time", 0.0), BASE_WIDTH)
 
-        # Simple game over overlay
-        if game.game_over:
-            overlay = pygame.Surface((BASE_WIDTH, BASE_HEIGHT), pygame.SRCALPHA)
-            overlay.fill((0, 0, 0, 160))
-            screen.blit(overlay, (0, 0))
-            go_font = pygame.font.SysFont(None, 48)
-            txt1 = go_font.render("Game Over", True, (255, 255, 255))
-            txt2 = font.render(f"Score: {game.score}", True, (255, 255, 255))
-            reason = game.last_fail_reason or ""
-            missed = f"Missed: {game.last_missed_type}" if game.last_missed_type else ""
-            txt3 = font.render((missed or reason), True, (255, 200, 200))
-            screen.blit(txt1, (BASE_WIDTH // 2 - txt1.get_width() // 2, BASE_HEIGHT // 2 - 60))
-            screen.blit(txt2, (BASE_WIDTH // 2 - txt2.get_width() // 2, BASE_HEIGHT // 2))
-            if txt3.get_width() > 0:
-                screen.blit(txt3, (BASE_WIDTH // 2 - txt3.get_width() // 2, BASE_HEIGHT // 2 + 28))
-            hint = font.render("Press R to restart, ESC/Q to quit", True, (200, 200, 200))
-            screen.blit(hint, (BASE_WIDTH // 2 - hint.get_width() // 2, BASE_HEIGHT // 2 + 60))
+        # Overlays
+        if cfg.mode == "endless":
+            if game.game_over:
+                overlay = pygame.Surface((BASE_WIDTH, BASE_HEIGHT), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 160))
+                screen.blit(overlay, (0, 0))
+                go_font = pygame.font.SysFont(None, 48)
+                txt1 = go_font.render("Game Over", True, (255, 255, 255))
+                txt2 = font.render(f"Score: {game.score}", True, (255, 255, 255))
+                reason = game.last_fail_reason or ""
+                missed = f"Missed: {game.last_missed_type}" if game.last_missed_type else ""
+                txt3 = font.render((missed or reason), True, (255, 200, 200))
+                screen.blit(txt1, (BASE_WIDTH // 2 - txt1.get_width() // 2, BASE_HEIGHT // 2 - 60))
+                screen.blit(txt2, (BASE_WIDTH // 2 - txt2.get_width() // 2, BASE_HEIGHT // 2))
+                if txt3.get_width() > 0:
+                    screen.blit(txt3, (BASE_WIDTH // 2 - txt3.get_width() // 2, BASE_HEIGHT // 2 + 28))
+                hint = font.render("Press R to restart, ESC/Q to quit", True, (200, 200, 200))
+                screen.blit(hint, (BASE_WIDTH // 2 - hint.get_width() // 2, BASE_HEIGHT // 2 + 60))
+        else:
+            # Classic overlays: finished or game_over
+            if getattr(game, "finished", False) or getattr(game, "game_over", False):
+                overlay = pygame.Surface((BASE_WIDTH, BASE_HEIGHT), pygame.SRCALPHA)
+                overlay.fill((0, 0, 0, 160))
+                screen.blit(overlay, (0, 0))
+                title = "Finished!" if getattr(game, "finished", False) else "Game Over"
+                go_font = pygame.font.SysFont(None, 48)
+                txt1 = go_font.render(title, True, (255, 255, 255))
+                time_text = f"Time: {int(game.elapsed_time // 60):02d}:{int(game.elapsed_time % 60):02d}.{int((game.elapsed_time*1000)%1000)//10:02d}"
+                txt2 = font.render(time_text, True, (255, 255, 255))
+                reason = getattr(game, "last_fail_reason", "") or ""
+                txt3 = font.render(reason, True, (255, 200, 200)) if reason else None
+                screen.blit(txt1, (BASE_WIDTH // 2 - txt1.get_width() // 2, BASE_HEIGHT // 2 - 60))
+                screen.blit(txt2, (BASE_WIDTH // 2 - txt2.get_width() // 2, BASE_HEIGHT // 2))
+                if txt3 and txt3.get_width() > 0:
+                    screen.blit(txt3, (BASE_WIDTH // 2 - txt3.get_width() // 2, BASE_HEIGHT // 2 + 28))
+                hint = font.render("Press R to restart, ESC/Q to quit", True, (200, 200, 200))
+                screen.blit(hint, (BASE_WIDTH // 2 - hint.get_width() // 2, BASE_HEIGHT // 2 + 60))
 
         pygame.display.flip()
 

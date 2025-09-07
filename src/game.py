@@ -3,10 +3,13 @@ from __future__ import annotations
 from typing import List, Optional
 
 import pygame
+import random
 
 from .constants import BASE_WIDTH, BASE_HEIGHT, HIT_LINE_FRACTION, ROWS_VISIBLE, MISS_TOLERANCE_PX, COLOR_BG, COLOR_LANE_GUIDE, COLOR_HIT_LINE
 from .config import GameConfig
 from .models import Tile
+from .assets import AssetManager
+from .generator import generate_row
 
 
 def calculate_lane_rects(window_width: int, window_height: int, lanes: int) -> List[pygame.Rect]:
@@ -122,4 +125,142 @@ class Game:
         # hit line on top
         pygame.draw.line(self.screen, COLOR_HIT_LINE, (0, self.hit_line_y), (self.window_width, self.hit_line_y), 2)
 
+
+
+class ClassicGame:
+    def __init__(self, screen: pygame.Surface, cfg: GameConfig, asset_manager: AssetManager):
+        self.screen = screen
+        self.cfg = cfg
+        self.asset_manager = asset_manager
+        self.window_width, self.window_height = screen.get_size()
+        self.lane_rects = calculate_lane_rects(self.window_width, self.window_height, cfg.lanes)
+        self.hit_line_y = get_hit_line_y(self.window_height)
+        self.tile_width, self.tile_height = get_tile_size(self.window_width, self.window_height)
+
+        # Timing
+        self.elapsed_time: float = 0.0
+        self.timer_running: bool = False
+
+        # Progress
+        self.rows_total: int = cfg.classic.rows_total if cfg.classic else 0
+        self.cleared_rows: int = 0
+        self.finished: bool = False
+        self.game_over: bool = False
+        self.last_fail_reason: Optional[str] = None
+
+        # Advance animation
+        self.advance_duration_ms: int = cfg.classic.advance_animation_ms if cfg.classic else 0
+        self.advance_elapsed_ms: float = 0.0
+        self.advancing: bool = False
+        self.board_offset_y: float = 0.0
+
+        # Rows
+        self.rows: List[List[Tile]] = self._generate_all_rows()
+
+    def _base_row_y(self) -> int:
+        return int(self.hit_line_y - self.tile_height // 2)
+
+    def _generate_all_rows(self) -> List[List[Tile]]:
+        rows: List[List[Tile]] = []
+        rng = random.Random()
+        base_y = self._base_row_y()
+        for i in range(self.rows_total):
+            y_top = base_y - i * self.tile_height
+            row_tiles = generate_row(
+                self.cfg.target_type,
+                self.cfg.other_types,
+                self.cfg.lanes,
+                self.lane_rects,
+                self.asset_manager,
+                self.tile_height,
+                rng,
+                y_top,
+            )
+            rows.append(row_tiles)
+        return rows
+
+    def update(self, dt: float) -> None:
+        if self.game_over or self.finished:
+            return
+        if self.timer_running:
+            self.elapsed_time += dt
+        if self.advancing:
+            if self.advance_duration_ms == 0:
+                self._finalize_advance()
+            else:
+                self.advance_elapsed_ms += dt * 1000.0
+                progress = min(1.0, self.advance_elapsed_ms / max(1.0, self.advance_duration_ms))
+                self.board_offset_y = progress * self.tile_height
+                if progress >= 1.0:
+                    self._finalize_advance()
+
+    def handle_keydown(self, lane_index: int) -> None:
+        if self.game_over or self.finished or self.advancing:
+            return
+        if not self.timer_running:
+            self.timer_running = True
+        tile = self._find_tile_at_hit_line_in_current_row(lane_index)
+        if tile is None:
+            return
+        if tile.type_name == self.cfg.target_type:
+            tile.state = "hit"
+            self._start_advance()
+        else:
+            self.last_fail_reason = "wrong_tap"
+            self.game_over = True
+
+    def _find_tile_at_hit_line_in_current_row(self, lane_index: int) -> Optional[Tile]:
+        if not self.rows:
+            return None
+        current_row = self.rows[0]
+        candidates: list[Tile] = []
+        for t in current_row:
+            if t.state != "active" or t.lane_index != lane_index:
+                continue
+            y0 = t.y + self.board_offset_y
+            if y0 <= self.hit_line_y <= (y0 + t.height):
+                candidates.append(t)
+        if not candidates:
+            return None
+        candidates.sort(key=lambda t: abs((t.y + self.board_offset_y + t.height / 2) - self.hit_line_y))
+        return candidates[0]
+
+    def _start_advance(self) -> None:
+        self.advancing = True
+        self.advance_elapsed_ms = 0.0
+        self.board_offset_y = 0.0
+
+    def _finalize_advance(self) -> None:
+        # Apply final offset permanently to remaining rows, then reset offset
+        if self.board_offset_y != 0.0:
+            for row in self.rows:
+                for t in row:
+                    t.y += self.board_offset_y
+        self.advancing = False
+        self.advance_elapsed_ms = 0.0
+        self.board_offset_y = 0.0
+        # Clear current row
+        if self.rows:
+            self.rows.pop(0)
+        self.cleared_rows += 1
+        if self.cleared_rows >= self.rows_total:
+            self.finished = True
+            self.timer_running = False
+
+    def render(self) -> None:
+        self.screen.fill(COLOR_BG)
+        # lane guides
+        for i, rect in enumerate(self.lane_rects):
+            if i > 0:
+                pygame.draw.line(self.screen, COLOR_LANE_GUIDE, (rect.x, 0), (rect.x, self.window_height), 1)
+        # draw tiles for all rows with current offset
+        for row in self.rows:
+            for t in row:
+                if t.state == "active":
+                    self.screen.blit(
+                        pygame.transform.smoothscale(t.image, (t.width, t.height)),
+                        (t.x, int(t.y + self.board_offset_y)),
+                    )
+        # hit line
+        pygame.draw.line(self.screen, COLOR_HIT_LINE, (0, self.hit_line_y), (self.window_width, self.hit_line_y), 2)
 

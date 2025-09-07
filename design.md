@@ -2,7 +2,11 @@
 
 ### Overview
 
-Endless-mode Piano Tiles variant where tiles are images from named types under `assets/{type_name}` (PNG/JPG only). One fixed `target_type` is configured; each row spawns exactly one target tile and fills remaining lanes with other types. Player taps only target tiles; tapping any other type or missing a target ends the run. Scoring is base-only (+1 per correct tap). Four lanes are mapped left→right via configurable `controls.keys`.
+Piano Tiles variant where tiles are images from named types under `assets/{type_name}` (PNG/JPG only). Supports two modes selected by `mode` in config:
+- Endless: one fixed `target_type`; each row spawns exactly one target tile and fills remaining lanes with other types; tiles scroll continuously; tapping any other type or missing a target ends the run; scoring is base-only (+1 per correct tap).
+- Classic: fixed-length run measured by time; the board advances one row only after a correct hit; a wrong hit ends the run; objective is to finish all rows as fast as possible.
+
+Four lanes are mapped left→right via configurable `controls.keys`.
 
 ### Tech stack
 
@@ -37,16 +41,17 @@ conda run -n piano_tile python -m pip install pygame pillow
 ### Configuration
 
 - `lanes: 4`
-- `mode: "endless"`
+- `mode: "endless" | "classic"`
 - `target_type: "<type_name>"`
 - `other_types: ["<other_type>", ...]`
-- `speed: { start_px_per_sec, accel_px_per_min, max_px_per_sec }`
+- Endless-only: `speed: { start_px_per_sec, accel_px_per_min, max_px_per_sec }`
+- Classic-only: `classic: { rows_total: int (>0), advance_animation_ms: int (>=0, default 160) }`
 - `hit_window_ms: { good }` — only the “good” window is used; any `perfect` value is ignored if present
 - `assets_root: "assets"`
 - `supported_formats: ["png", "jpg"]`
 - `controls: { keys: ["<k0>","<k1>","<k2>","<k3>"] }` — pygame key names, order defines lanes left→right; must be unique and length must equal `lanes`.
 
-Example:
+Example (endless):
 
 ```json
 {
@@ -55,6 +60,22 @@ Example:
   "target_type": "aiko",
   "other_types": ["pikachu", "sesame"],
   "speed": { "start_px_per_sec": 400, "accel_px_per_min": 250, "max_px_per_sec": 1200 },
+  "hit_window_ms": { "good": 120 },
+  "assets_root": "assets",
+  "supported_formats": ["png", "jpg"],
+  "controls": { "keys": ["a", "s", "d", "f"] }
+}
+```
+
+Example (classic):
+
+```json
+{
+  "lanes": 4,
+  "mode": "classic",
+  "target_type": "aiko",
+  "other_types": ["pikachu", "sesame"],
+  "classic": { "rows_total": 60, "advance_animation_ms": 160 },
   "hit_window_ms": { "good": 120 },
   "assets_root": "assets",
   "supported_formats": ["png", "jpg"],
@@ -79,27 +100,24 @@ Example:
   - Instantiate `Tile` objects with images via AssetManager.
 
 - Game state & loop (`game.py`)
-  - State: score, elapsed_time, `current_speed`, tile list, lane geometry, hit line Y.
-  - Update per frame:
-    - `dt = clock.tick(fps)/1000`
-    - Increase speed linearly: `current_speed = min(current_speed + accel*dt, max_speed)`
-    - Move tiles: `tile.y += current_speed * dt`
-    - Miss detection: if a target tile crosses the hit line without being hit → game over.
-    - Spawn new rows when top spacing threshold is met.
+  - Endless (`Game`):
+    - State: score, elapsed_time, `current_speed`, tile list, lane geometry, hit line Y.
+    - Update per frame: increase speed linearly and move tiles; miss detection if a target tile crosses the hit line; spawn new rows when spacing threshold is met.
+  - Classic (`ClassicGame`):
+    - Pre-generate exactly `rows_total` rows; no autonomous scrolling.
+    - Timer starts on first valid user input and stops immediately after the final correct hit.
+    - On correct hit: animate a one-row advance over `advance_animation_ms` (or instant if 0); inputs ignored during animation.
+    - On wrong tap: immediate game over. When all rows are cleared: finished state.
 
 - Input handling (configurable keys)
   - Map key to lane index (0..3).
-  - On keydown, find the nearest tile in that lane within the vertical hit window around the hit line.
-  - If tile exists and `type_name == target_type`: mark `hit`, score += 1; otherwise: game over.
+  - On keydown, find the nearest tile in that lane intersecting the hit line within the `good` window.
+  - Endless: if tile exists and `type_name == target_type`: mark `hit`, score += 1; otherwise: game over. Misses end when target crosses the hit line.
+  - Classic: if tile exists and `type_name == target_type`: mark `hit` and advance; otherwise: game over.
 
 - HUD (`hud.py`)
-  - Draw current `target_type` thumbnail, `score`, and a `timer` bar (based on elapsed run time).
-
-- Difficulty ramp
-  - Linear acceleration over time, capped at `max_px_per_sec`.
-
-- Game over
-  - Full-screen overlay showing final score and a brief message; allow restart or quit.
+  - Endless: draw current `target_type` thumbnail, `score`, and a `timer` bar (based on elapsed run time).
+  - Classic: draw target thumbnail, `Rows: cleared/total`, and a prominent mm:ss.ms timer (`render_hud_classic`).
 
 ### Geometry and rendering
 
@@ -118,6 +136,15 @@ Example:
 
 - Preload and pre-scale all images at startup; avoid per-frame scaling and disk I/O.
 - Use integer-aligned blits when possible; minimize surface conversions in the loop.
+
+### Difficulty ramp
+
+- Endless only: linear acceleration over time, capped at `max_px_per_sec`.
+
+### Game over and completion
+
+- Endless: Full-screen overlay showing final score and a brief message; allow restart or quit.
+- Classic: Finished overlay with final time; wrong tap shows game over with elapsed time; allow restart or quit.
 
 ### Edge cases
 
